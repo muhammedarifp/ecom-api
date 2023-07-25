@@ -4,13 +4,13 @@ import "gorm.io/gorm"
 
 type Products struct {
 	gorm.Model
-	Name       string `gorm:"name"`
-	Disc       string `gorm:"disc"`
-	Price      uint   `gorm:"price"`
-	Quntity    uint   `gorm:"quntity"`
-	CatogaryID uint   `gorm:"catogary_id"`
-	IsActive   bool   `gorm:"is_active"`
-	IsDeleted  bool   `gorm:"is_deleted"`
+	Name       string  `gorm:"name"`
+	Disc       string  `gorm:"disc"`
+	Price      float64 `gorm:"price"`
+	Quntity    uint    `gorm:"quntity"`
+	CatogaryID uint    `gorm:"catogary_id"`
+	IsActive   bool    `gorm:"is_active"`
+	IsDeleted  bool    `gorm:"is_deleted"`
 }
 
 // Product Image table

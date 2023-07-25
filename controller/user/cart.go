@@ -15,13 +15,14 @@ import (
 // Get all cart products
 
 type cartProductResponse struct {
-	ProductID uint
-	CartID    uint
-	Product   struct {
-		Name  string
-		Disc  string
-		Price uint
-		Image string
+	CartID  uint
+	Product struct {
+		ProductID uint
+		Name      string
+		Disc      string
+		Price     float64
+		Quntity   uint
+		Image     string
 	}
 }
 
@@ -29,10 +30,10 @@ func GetAllCartProducts() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		db := *config.GetDb()
 		var cartProducts []models.UserCart
-		var ProData models.Products
+		userID := helpers.GetUserIDFromJwt(ctx)
 		var Images []models.ProductImages
 		var result []cartProductResponse
-		if res := db.Find(&cartProducts); res.Error != nil {
+		if res := db.Find(&cartProducts, `user_id = ?`, userID); res.Error != nil {
 			ctx.AbortWithStatusJSON(http.StatusInternalServerError, models.Response{
 				Status:  false,
 				Message: "Cart Products not found",
@@ -42,28 +43,36 @@ func GetAllCartProducts() gin.HandlerFunc {
 		}
 
 		for _, val := range cartProducts {
+			var ProData models.Products
 			db.First(&ProData, val.ProductID)
 			db.Joins("JOIN products ON products.id = product_images.product_id").First(&Images)
 			newRes := cartProductResponse{
-				ProductID: ProData.ID,
-				CartID:    val.ID,
+				CartID: val.ID,
 				Product: struct {
-					Name  string
-					Disc  string
-					Price uint
-					Image string
+					ProductID uint
+					Name      string
+					Disc      string
+					Price     float64
+					Quntity   uint
+					Image     string
 				}{
-					Name:  ProData.Name,
-					Disc:  ProData.Disc,
-					Price: ProData.Price,
-					Image: Images[0].ImageName,
+					ProductID: ProData.ID,
+					Name:      ProData.Name,
+					Disc:      ProData.Disc,
+					Price:     ProData.Price,
+					Quntity:   uint(val.ProductCount),
+					Image:     Images[0].ImageName,
 				},
 			}
 
 			result = append(result, newRes)
 		}
 
-		ctx.JSON(http.StatusOK, result)
+		ctx.JSON(http.StatusOK, gin.H{
+			"ProductsCount": len(result),
+			"UserID":        userID,
+			"Products":      result,
+		})
 	}
 }
 
@@ -134,8 +143,8 @@ func UserAddToCartController() gin.HandlerFunc {
 func UserCartQuntityController() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		db := *config.GetDb()
-		cartid := ctx.Query("cartid")
-		change := ctx.Query("change")
+		cartid := ctx.Param("cartid")
+		change := ctx.Param("change")
 
 		fmt.Println(cartid + " " + change)
 

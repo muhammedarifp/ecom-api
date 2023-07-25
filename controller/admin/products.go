@@ -20,11 +20,11 @@ import (
 
 // New product model sample struct
 type NewProductFormData struct {
-	Name       string `form:"name" validate:"required"`
-	Disc       string `form:"disc" validate:"required"`
-	Price      uint   `form:"price" validate:"required"`
-	Quntity    uint   `form:"quntity" validate:"required"`
-	CatogaryID uint   `form:"catogary_id" validate:"required"`
+	Name       string  `form:"name" validate:"required"`
+	Disc       string  `form:"disc" validate:"required"`
+	Price      float64 `form:"price" validate:"required"`
+	Quntity    uint    `form:"quntity" validate:"required"`
+	CatogaryID uint    `form:"catogary_id" validate:"required"`
 }
 
 func AdminAddNewProductController() gin.HandlerFunc {
@@ -160,12 +160,12 @@ func AdminAddNewProductController() gin.HandlerFunc {
 
 // Edit old product controller. This function just update product details
 type NewDetails struct {
-	ProductID   uint   `form:"product_id" validate:"required"`
-	NewName     string `form:"name" validate:"required"`
-	NewDisc     string `form:"disc" validate:"required"`
-	NewPrice    uint   `form:"price" validate:"required"`
-	NewQuntity  uint   `form:"quntity" validate:"required"`
-	NewCatogary uint   `form:"catogary" validate:"required"`
+	ProductID   uint    `form:"product_id" validate:"required"`
+	NewName     string  `form:"name" validate:"required"`
+	NewDisc     string  `form:"disc" validate:"required"`
+	NewPrice    float64 `form:"price" validate:"required"`
+	NewQuntity  uint    `form:"quntity" validate:"required"`
+	NewCatogary uint    `form:"catogary" validate:"required"`
 }
 
 func AdminEditProductController() gin.HandlerFunc {
@@ -297,7 +297,7 @@ type Response struct {
 	Create  time.Time
 	Name    string
 	Disc    string
-	Price   uint
+	Price   float64
 	Quntity uint
 	Images  []models.ProductImages
 }

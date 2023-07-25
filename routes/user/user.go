@@ -63,11 +63,11 @@ func UserRoutes(auth *gin.RouterGroup, unauth *gin.RouterGroup) {
 	auth.GET("/cart/getall", usercontroller.GetAllCartProducts())
 	auth.GET("/cart/add-pro/:productid", usercontroller.UserAddToCartController())
 	auth.DELETE("/cart/delete/:id", usercontroller.UserRemoveCartController())
-	auth.GET("/cart/quntity", usercontroller.UserCartQuntityController())
+	auth.GET("/cart/quntity/:cartid/:change", usercontroller.UserCartQuntityController())
 
 	// Checkout Section
 	auth.POST("/single-checkout", usercontroller.UserSingleCheckout())
-	auth.POST("/cart-checkout/:method/:coupon", usercontroller.CartCheckout())
+	auth.POST("/cart-checkout", usercontroller.CartCheckout())
 	auth.POST("/verify-pay", usercontroller.VerifyOrder())
 	// auth.POST("/online-checkout", usercontroller.UserOnlineCheckout())
 

@@ -28,6 +28,7 @@ func main() {
 		&models.OrdersItems{},
 		&models.Transactions{},
 		&models.Coupons{},
+		&models.CouponUsages{},
 		&models.Wallets{},
 	)
 

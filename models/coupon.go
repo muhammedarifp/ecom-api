@@ -11,4 +11,12 @@ type Coupons struct {
 	ExpiryDate        int     `gorm:"not null"` // In days
 	MinAmount         float64 `gorm:"not null"`
 	MaxDiscountAmount float64 `gorm:"not null"`
+	MaxUsage          uint    `gorm:"not null"`
+}
+
+type CouponUsages struct {
+	gorm.Model
+	CouponID   uint   `gorm:"not null"`
+	UserID     string `gorm:"not null"`
+	UsageCount uint   `gorm:"not null"`
 }

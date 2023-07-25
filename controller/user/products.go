@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/muhammedarif/Ecomapi/config"
 	"github.com/muhammedarif/Ecomapi/models"
+	"gorm.io/gorm"
 )
 
 // Get product by id
@@ -47,12 +48,14 @@ func UserGetProductByID() gin.HandlerFunc {
 
 // Get all products
 
-type Sample struct {
+type Product struct {
+	gorm.Model
 	Name       string `gorm:"name"`
 	Disc       string `gorm:"disc"`
 	Price      uint   `gorm:"price"`
 	Quntity    uint   `gorm:"quntity"`
 	CatogaryID uint   `gorm:"catogary_id"`
+	Images     []models.ProductImages
 }
 
 func GetallProducts() gin.HandlerFunc {
@@ -60,7 +63,7 @@ func GetallProducts() gin.HandlerFunc {
 		// userID := helpers.GetUserIDFromJwt(ctx)
 		page := ctx.Param("page")
 		db := *config.GetDb()
-		var products []Sample
+		var products []Product
 
 		pageint, err := strconv.Atoi(page)
 		if err != nil {
@@ -70,17 +73,30 @@ func GetallProducts() gin.HandlerFunc {
 			return
 		}
 		offset := (pageint - 1) * 10
-		if res := db.Table("products").Select("Name").Offset(offset).Limit(10).Find(&products); res.Error != nil {
+		if res := db.Table("products").Offset(offset).Limit(10).Find(&products); res.Error != nil {
 			ctx.AbortWithStatusJSON(400, gin.H{
 				"Error": res.Error.Error(),
 			})
 			return
 		}
 
+		result := []Product{}
+		for _, product := range products {
+			var images []models.ProductImages
+			if res := db.Find(&images, `product_id = ?`, product.ID); res.Error != nil {
+				ctx.JSON(400, gin.H{"Error": "Internal server error"})
+				ctx.Abort()
+				return
+			}
+
+			product.Images = images
+			result = append(result, product)
+		}
+
 		ctx.JSON(200, gin.H{
 			"Page":     page,
 			"Limit":    10,
-			"Products": products,
+			"Products": result,
 		})
 	}
 }

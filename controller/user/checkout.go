@@ -1,9 +1,6 @@
 package usercontroller
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,28 +9,23 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/muhammedarif/Ecomapi/config"
 	"github.com/muhammedarif/Ecomapi/helpers"
 	"github.com/muhammedarif/Ecomapi/models"
-	"github.com/razorpay/razorpay-go"
+	"gorm.io/gorm"
 )
 
-var (
-	RAZ_KEY = "rzp_test_hjvilmQsgbSYDR"
-	RAZ_SEC = "IQu2ZsJiZBHWi3703mDrRmxd"
-)
+// var (
+// 	RAZ_KEY = "rzp_test_hjvilmQsgbSYDR"
+// 	RAZ_SEC = "IQu2ZsJiZBHWi3703mDrRmxd"
+// )
 
-type CheckoutRequest struct {
-	ProductID      string `json:"productID"`
-	Method         string `json:"method"`
-	IsCartCheckout bool   `json:"iscart"`
-	Coupon         string `json:"coupon"`
-}
-
+// This section focus about to single product checkout
+// This fuction also available cod and online
 func UserSingleCheckout() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		// mode := ctx.Query("mode")
+
+		// Get userid from jwt token clims
 		userID := helpers.GetUserIDFromJwt(ctx)
 
 		// Check user blocked or not
@@ -44,27 +36,32 @@ func UserSingleCheckout() gin.HandlerFunc {
 			return
 		}
 
-		// This is a user inp struct
+		// This structure user enter data model
 		var data struct {
 			ProductID uint   `json:"productID"`
 			Method    string `json:"method"`
 			Coupon    string `json:"coupon"`
 		}
 
+		// Bind user enter data to data struct
+		// for using simplicity
 		if err := ctx.ShouldBindJSON(&data); err != nil {
 			ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"Error": err.Error()})
 			return
 		}
 
+		// Get user defult address
 		address, stwhether := getDefaultAddress(userID)
 		if !stwhether {
 			ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 				"Status": false,
-				"Error":  "Order not completed | Add Delivery address",
+				"Error":  "Order not completed | Delivery address not available",
 			})
 			return
 		}
 
+		// If user select cod on single checkot that case perform cod checkout
+		//
 		if data.Method == "COD" {
 			// TODO : PERFORM COD CHECKOUT
 
@@ -72,7 +69,7 @@ func UserSingleCheckout() gin.HandlerFunc {
 			final_price := orderData.TottalAmount
 
 			if data.Coupon != "" {
-				price, err := UseCoupon(data.Coupon, orderData.TottalAmount)
+				price, err := UseCoupon(data.Coupon, userID, orderData.TottalAmount)
 				if err != nil {
 					final_price = price
 				}
@@ -118,7 +115,7 @@ func UserSingleCheckout() gin.HandlerFunc {
 			//
 		} else if data.Method == "ONLINE" {
 			// TODO : PERFORM ONLINE PAY CHECKOUT
-			whether, orderData, transactionData, err := SingleCheckoutWithOnline(fmt.Sprint(data.ProductID), userID)
+			whether, orderData, transactionData, err := SingleCheckoutWithOnline(fmt.Sprint(data.ProductID), userID, data.Coupon)
 			if err != nil && !whether {
 				ctx.AbortWithStatusJSON(400, gin.H{
 					"Error": err.Error(),
@@ -129,7 +126,7 @@ func UserSingleCheckout() gin.HandlerFunc {
 			final_price := orderData.TottalAmount
 
 			if data.Coupon != "" {
-				price, err := UseCoupon(data.Coupon, orderData.TottalAmount)
+				price, err := UseCoupon(data.Coupon, userID, orderData.TottalAmount)
 				if err != nil {
 					final_price = price
 				}
@@ -160,6 +157,7 @@ func UserSingleCheckout() gin.HandlerFunc {
 				},
 			})
 
+			//
 		} else if data.Method == "WALLET" {
 			db := *config.GetDb()
 			var proData models.Products
@@ -178,9 +176,9 @@ func UserSingleCheckout() gin.HandlerFunc {
 
 			final_price := proData.Price
 			if data.Coupon != "" {
-				price, err := UseCoupon(data.Coupon, float64(final_price))
+				price, err := UseCoupon(data.Coupon, userID, float64(final_price))
 				if err != nil {
-					final_price = uint(price)
+					final_price = price
 				}
 			}
 
@@ -251,15 +249,21 @@ func UserSingleCheckout() gin.HandlerFunc {
 	}
 }
 
-// ! ================================================================================================
-
+// This is a cart checkout main function
+// This function recive paymoth method and coupon code
 func CartCheckout() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		userID := helpers.GetUserIDFromJwt(ctx)
 		db := *config.GetDb()
-		method := ctx.Param("method")
-		coupon := ctx.Param("coupon")
-		method = strings.ToUpper(method)
+
+		// User input structure model
+		var data struct {
+			Method string `json:"method"`
+			Coupon string `json:"coupon"`
+		}
+
+		ctx.ShouldBindJSON(&data)
+		method := strings.ToUpper(data.Method)
 
 		address, stwhether := getDefaultAddress(userID)
 		if !stwhether {
@@ -280,7 +284,7 @@ func CartCheckout() gin.HandlerFunc {
 
 		// Find user products and tottal price
 		// This all write using sql quries
-		total_price := 0
+		total_price := 0.0
 		var CartItems []models.UserCart
 		db.Table("user_carts").
 			Joins("JOIN products ON products.id = user_carts.product_id").
@@ -289,10 +293,12 @@ func CartCheckout() gin.HandlerFunc {
 			Select("SUM(price * product_count) as tottal").
 			Find(&total_price)
 
-		if coupon != "" {
-			price, err := UseCoupon(coupon, float64(total_price))
+		dicount_price := 0.0
+		if data.Coupon != "" {
+			price, err := UseCoupon(data.Coupon, userID, float64(total_price))
 			if err == nil {
-				total_price = int(price)
+				total_price = price
+				dicount_price = price
 			}
 		}
 
@@ -340,6 +346,13 @@ func CartCheckout() gin.HandlerFunc {
 				}
 			}
 
+			if res := db.Delete(&models.UserCart{}, `user_id = ?`, userID); res.Error != nil {
+				ctx.JSON(400, gin.H{
+					"Error": "Internal server error",
+				})
+				return
+			}
+
 			ctx.JSON(http.StatusOK, gin.H{
 				"Message": "Order success",
 				"Error":   nil,
@@ -350,6 +363,10 @@ func CartCheckout() gin.HandlerFunc {
 					"Status":      newOrder.Status,
 					"PayMethod":   newOrder.PayMethod,
 					"Transaction": nil,
+					"Coupon": map[string]any{
+						"Code":     data.Coupon,
+						"Discount": total_price - dicount_price,
+					},
 				},
 				"User": map[string]any{
 					"UserID": userID,
@@ -369,7 +386,7 @@ func CartCheckout() gin.HandlerFunc {
 
 			// TODO : Online Cart checkout section
 
-			whether, trData := CreateOrder(&models.Products{}, float64(total_price))
+			whether, trData := helpers.CreateOrder(&models.Products{}, float64(total_price))
 			if !whether {
 				ctx.AbortWithStatusJSON(400, gin.H{
 					"Error": "Checkout failed",
@@ -453,10 +470,13 @@ func CartCheckout() gin.HandlerFunc {
 	}
 }
 
-// ! =============================================================================================
-
-// ? Helper Functions Section -----
-
+// This is single cod checkout helper function
+// This function recive productID, userID and coupon
+// after that fetch product details using product id
+// Next step is if coupon available apply coupon otherwise nothing
+// Next step is create order on orders table
+// Next step is create order details on order items table
+// Return that order details and items details
 func SingleCheckoutWithCod(productID uint, userID, coupon string) (bool, *models.Orders, error) {
 	db := *config.GetDb()
 
@@ -469,9 +489,9 @@ func SingleCheckoutWithCod(productID uint, userID, coupon string) (bool, *models
 
 	final_price := proData.Price
 	if coupon != "" {
-		price, err := UseCoupon(coupon, float64(final_price))
+		price, err := UseCoupon(coupon, userID, float64(final_price))
 		if err == nil {
-			final_price = uint(price)
+			final_price = price
 		}
 	}
 
@@ -501,16 +521,30 @@ func SingleCheckoutWithCod(productID uint, userID, coupon string) (bool, *models
 	return false, &newOrder, nil
 }
 
-// Online single checkout helper function
-func SingleCheckoutWithOnline(productID, UserID string) (bool, *models.Orders, *models.Transactions, error) {
+// This function purpus is hep Single checkout section
+// This function recive productID, userID and coupon code
+// Fetch product details using product id
+// coupon pending
+// After that Create Order using previusly fetched order details
+// Finally create order items
+// Return that all details
+func SingleCheckoutWithOnline(productID, UserID, coupon string) (bool, *models.Orders, *models.Transactions, error) {
 	db := *config.GetDb()
 	var proData models.Products
 	if res := db.First(&proData, productID); res.Error != nil {
 		return false, &models.Orders{}, &models.Transactions{}, errors.New("internal server error or invalid input")
 	}
 
+	final_price := proData.Price
+	if coupon != "" {
+		fprice, err := UseCoupon(coupon, UserID, final_price)
+		if err == nil {
+			final_price = fprice
+		}
+	}
+
 	// Create razorpay order
-	whether, transactionData := CreateOrder(&proData, float64(proData.Price))
+	whether, transactionData := helpers.CreateOrder(&proData, float64(proData.Price))
 	if !whether {
 		return false, &models.Orders{}, &models.Transactions{}, errors.New("checkout failed, order not created")
 	}
@@ -518,7 +552,7 @@ func SingleCheckoutWithOnline(productID, UserID string) (bool, *models.Orders, *
 	// Create new order
 	newOrder := models.Orders{
 		UserID:        UserID,
-		TottalAmount:  float64(transactionData.Amount),
+		TottalAmount:  final_price,
 		Status:        "PENDING",
 		PayMethod:     "ONLINE",
 		TransactionID: transactionData.ID,
@@ -546,136 +580,35 @@ func SingleCheckoutWithOnline(productID, UserID string) (bool, *models.Orders, *
 	return true, &newOrder, transactionData, nil
 }
 
-// Finally End Cart Checkout Section
-// After i continue cart checkout section
-// This  Function Recive array of cart ids
-// TODO : Cart checkout section
-
-// ! ==========================================================================================
-
-// ! ====================================================================================
-
-// TODO : Verify checkout / payment section
-type VerifyInps struct {
-	OrderID   string `json:"order_id"`
-	PaymentID string `json:"payment_id"`
-	Signature string `json:"signature"`
-}
-
-func VerifyOrder() gin.HandlerFunc {
-	return func(ctx *gin.Context) {
-		db := *config.GetDb()
-		userID := helpers.GetUserIDFromJwt(ctx)
-		var inpData VerifyInps
-		if err := ctx.ShouldBindJSON(&inpData); err != nil {
-			ctx.JSON(400, gin.H{
-				"Error": "Order not success",
-			})
-			return
-		}
-
-		var transactionData models.Transactions
-		if res := db.First(&transactionData, inpData.OrderID); res.Error != nil {
-			ctx.JSON(400, gin.H{
-				"Error": "Transaction not found",
-			})
-			return
-		}
-
-		var data = transactionData.OrderID + "|" + inpData.PaymentID
-
-		//
-		hash := hmac.New(sha256.New, []byte(RAZ_SEC))
-		hash.Write([]byte(data))
-		genarated_signature := hex.EncodeToString(hash.Sum(nil))
-
-		if inpData.Signature != genarated_signature {
-			ChangeOrderStatus(userID, inpData.OrderID)
-			transactionData.Attempts++
-			if res := db.Save(&transactionData); res.Error != nil {
-				ctx.JSON(200, gin.H{
-					"Error": "Transaction not verified | Internal server error",
-				})
-			}
-			ctx.JSON(200, gin.H{
-				"Error": "Transaction not verified",
-			})
-		} else {
-			ctx.JSON(200, gin.H{
-				"Message": "Transaction verified",
-			})
-		}
-	}
-}
-
-// ! ==================================================================================================
-
-func ChangeOrderStatus(userID, orderID string) bool {
-	db := *config.GetDb()
-	var orderData models.Orders
-	if res := db.Where("id = ? AND user_id = ?", orderID, userID).First(&orderData); res.Error != nil {
-		return false
-	}
-
-	orderData.IsSuccess = true
-	orderData.Status = "Success"
-
-	if res := db.Save(&orderData); res.Error != nil {
-		return false
-	}
-
-	return true
-}
-
-// func
-
-// ! =====================================================================================
-
-// This is a -- CreateOrder -- helper function
-// In razorpay we will create a order first and send order details on server
-// So this helper function used for create order
-func CreateOrder(productDatas *models.Products, total_amount float64) (bool, *models.Transactions) {
-	db := *config.GetDb()
-	client := razorpay.NewClient(RAZ_KEY, RAZ_SEC)
-	// tottal_mount := productData.Price
-	recipt_id := uuid.New()
-	newOrder := map[string]interface{}{
-		"amount":   total_amount,
-		"currency": "INR",
-		"receipt":  recipt_id,
-	}
-
-	// Create order using razorpay api
-	body, err := client.Order.Create(newOrder, nil)
-	if err != nil {
-		return false, &models.Transactions{}
-	}
-
-	// Create new transaction on database
-	newTransaction := models.Transactions{
-		OrderID:  body["id"].(string),
-		Amount:   total_amount,
-		Attempts: body["attempts"].(float64),
-		Currency: body["currency"].(string),
-		Receipt:  body["receipt"].(string),
-		Status:   "Pending",
-	}
-
-	fmt.Println(newTransaction)
-	if res := db.Create(&newTransaction); res.Error != nil {
-		return false, &models.Transactions{}
-	}
-	return true, &newTransaction
-}
-
-// ? ----------------------------------------------------------------------------------
-// Coupon Using
-
-func UseCoupon(coupon string, price float64) (float64, error) {
+// This function purpous is use discount and offer coupons
+// This function recive 2 params coupon code and current price
+// This fuction basic working is fetch coupon details using coupon code
+// After that check coupon expired or not, coupon table available coupon validity in days
+// Next step is check min-amount is available or not
+// Next step is calculate discount amount and that amount greter than max-amount
+// Finally return final price -- !!final price means (org-price - discount)!!
+func UseCoupon(coupon, userID string, price float64) (float64, error) {
 	db := *config.GetDb()
 	var couponData models.Coupons
+	var couponUsage models.CouponUsages
 	if res := db.First(&couponData, `code = ?`, coupon); res.Error != nil {
 		return 0, errors.New("invalid coupon code")
+	}
+
+	if res := db.First(&couponUsage, `user_id = ?`, userID); res.Error != nil {
+		if errors.Is(res.Error, gorm.ErrRecordNotFound) {
+			newUsage := models.CouponUsages{
+				UserID:     userID,
+				CouponID:   couponData.ID,
+				UsageCount: 1,
+			}
+
+			if res := db.Create(&newUsage); res.Error != nil {
+				return 0, errors.New("Coupon not applied")
+			}
+		}
+
+		return 0, errors.New("Coupon not applied")
 	}
 
 	duration := time.Now().Sub(couponData.CreatedAt)
@@ -698,9 +631,11 @@ func UseCoupon(coupon string, price float64) (float64, error) {
 
 }
 
-// ? ----------------------------------------------------------------------------------
-// This Function maily focus about get user user default address
-
+// This function usage is fetch default address
+// This function recive userID only
+// After that fetch that user addresses on database
+// Finally return defult address
+// This functon main purpous is code reusability
 func getDefaultAddress(userID string) (*models.Address, bool) {
 	db := *config.GetDb()
 	var addressData models.Address
