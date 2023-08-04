@@ -87,7 +87,4 @@ func UserRoutes(auth *gin.RouterGroup, unauth *gin.RouterGroup) {
 	auth.GET("/download-invoice/:orderid", usercontroller.DownloadInvoice())
 
 	// Graphs
-
-	// test
-	unauth.GET("/rand", usercontroller.PrintRandNumber())
 }
