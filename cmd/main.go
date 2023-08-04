@@ -19,17 +19,18 @@ func main() {
 	// Migrate all database models using gorm auto migrate
 	config.DataBase.AutoMigrate(
 		&models.Users{},
-		&models.Products{},
-		&models.Catogary{},
+		&models.Product{},
 		&models.ProductImages{},
 		&models.Address{},
 		&models.UserCart{},
-		&models.Orders{},
-		&models.OrdersItems{},
+		&models.Order{},
+		&models.OrderItem{},
 		&models.Transactions{},
-		&models.Coupons{},
-		&models.CouponUsages{},
+		&models.Coupon{},
+		&models.CouponUsage{},
+		&models.Catogory{},
 		&models.Wallets{},
+		&models.CatogoryOffer{},
 	)
 
 	// Create Default gin engine

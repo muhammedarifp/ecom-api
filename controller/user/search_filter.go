@@ -14,7 +14,7 @@ func SearchProductUsingID() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		productid := ctx.Param("productid")
 		db := *config.GetDb()
-		var proData models.Products
+		var proData models.Product
 		var proImages []ProductImages
 		if res := db.First(&proData, productid); res.Error != nil {
 			ctx.AbortWithStatusJSON(400, gin.H{
@@ -49,8 +49,8 @@ func SearchProductUsingID() gin.HandlerFunc {
 func SearchProductsUsingCatogary() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		name := ctx.Param("catogary")
-		var products []models.Products
-		var catogary models.Catogary
+		var products []models.Product
+		var catogary models.Catogory
 		db := *config.GetDb()
 		if res := db.Find(&catogary, `name = ?`, name); res.Error != nil {
 			ctx.AbortWithStatusJSON(400, gin.H{

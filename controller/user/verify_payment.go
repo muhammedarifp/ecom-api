@@ -13,7 +13,7 @@ import (
 )
 
 type VerifyInps struct {
-	OrderID   string `json:"order_id"`
+	OrderID   string `json:"transaction_id"`
 	PaymentID string `json:"payment_id"`
 	Signature string `json:"signature"`
 }
@@ -46,7 +46,6 @@ func VerifyOrder() gin.HandlerFunc {
 		genarated_signature := hex.EncodeToString(hash.Sum(nil))
 
 		if inpData.Signature != genarated_signature {
-			ChangeOrderStatus(userID, inpData.OrderID)
 			transactionData.Attempts++
 			if res := db.Save(&transactionData); res.Error != nil {
 				ctx.JSON(200, gin.H{
@@ -54,19 +53,27 @@ func VerifyOrder() gin.HandlerFunc {
 				})
 			}
 			ctx.JSON(200, gin.H{
-				"Error": "Transaction not verified",
+				"Error":   "Transaction not verified",
+				"New_sig": genarated_signature,
 			})
 		} else {
-			ctx.JSON(200, gin.H{
-				"Message": "Transaction verified",
-			})
+			if ChangeOrderStatus(userID, inpData.OrderID) {
+				ctx.JSON(200, gin.H{
+					"Message": "Transaction verified",
+				})
+			} else {
+				ctx.JSON(200, gin.H{
+					"Error":   "Transaction not verified",
+					"New_sig": genarated_signature,
+				})
+			}
 		}
 	}
 }
 
 func ChangeOrderStatus(userID, orderID string) bool {
 	db := *config.GetDb()
-	var orderData models.Orders
+	var orderData models.Order
 	if res := db.Where("id = ? AND user_id = ?", orderID, userID).First(&orderData); res.Error != nil {
 		return false
 	}

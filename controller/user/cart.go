@@ -43,7 +43,7 @@ func GetAllCartProducts() gin.HandlerFunc {
 		}
 
 		for _, val := range cartProducts {
-			var ProData models.Products
+			var ProData models.Product
 			db.First(&ProData, val.ProductID)
 			db.Joins("JOIN products ON products.id = product_images.product_id").First(&Images)
 			newRes := cartProductResponse{
@@ -81,9 +81,11 @@ func UserAddToCartController() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		userid := helpers.GetUserIDFromJwt(ctx)
 		proid := ctx.Param("productid")
+
+		// proid empty
 		db := *config.GetDb()
 
-		var productDeta models.Products
+		var productDeta models.Product
 		if res := db.First(&productDeta, proid); res.Error != nil {
 			ctx.AbortWithStatusJSON(http.StatusInternalServerError, models.Response{
 				Status:  false,

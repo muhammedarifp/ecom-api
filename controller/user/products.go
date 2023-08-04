@@ -15,7 +15,7 @@ func UserGetProductByID() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		proid := ctx.Query("id")
 		db := *config.GetDb()
-		var proDeta models.Products
+		var proDeta models.Product
 		var imgDeta []models.ProductImages
 
 		if res := db.First(&proDeta, proid); res.Error != nil {

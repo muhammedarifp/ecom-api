@@ -9,14 +9,14 @@ import (
 )
 
 type CatogaryModel struct {
-	Name string `form:"name"`
-	Desc string `form:"desc"`
+	Name string `json:"name"`
+	Desc string `json:"desc"`
 }
 
 func AdminAddNewCatogary() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		var CatogaryData CatogaryModel
-		if err := ctx.ShouldBind(&CatogaryData); err != nil {
+		if err := ctx.ShouldBindJSON(&CatogaryData); err != nil {
 			ctx.AbortWithStatusJSON(http.StatusBadRequest, models.Response{
 				Status:  false,
 				Message: "Catogary adding failed",
@@ -27,7 +27,7 @@ func AdminAddNewCatogary() gin.HandlerFunc {
 		db := *config.GetDb()
 
 		//
-		var Catogary = models.Catogary{
+		var Catogary = models.Catogory{
 			Name: CatogaryData.Name,
 			Disc: CatogaryData.Desc,
 		}
@@ -42,7 +42,7 @@ func AdminAddNewCatogary() gin.HandlerFunc {
 
 		ctx.AbortWithStatusJSON(http.StatusOK, models.Response{
 			Status:  true,
-			Message: "C-- Please select an object in the tree view.atogary adding success",
+			Message: "Adding Success",
 			Error:   nil,
 		})
 	}
@@ -52,9 +52,9 @@ func AdminAddNewCatogary() gin.HandlerFunc {
 
 func AdminGetAllCatogarys() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		var catogarys []models.Catogary
+		var catogarys []models.Catogory
 		db := *config.GetDb()
-		if res := db.Select("id", "name", "disc").Find(&catogarys); res.Error != nil {
+		if res := db.Find(&catogarys); res.Error != nil {
 			ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 				"error": res.Error.Error(),
 			})

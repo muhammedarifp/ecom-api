@@ -13,7 +13,7 @@ import (
 // This is a -- CreateOrder -- helper function
 // In razorpay we will create a order first and send order details on server
 // So this helper function used for create order
-func CreateOrder(productDatas *models.Products, total_amount float64) (bool, *models.Transactions) {
+func CreateOrder(productDatas *models.Product, total_amount float64) (bool, *models.Transactions) {
 	db := *config.GetDb()
 	client := razorpay.NewClient(private.RAZORPAY_KEY, private.RAZORPAY_SECRET)
 	// tottal_mount := productData.Price

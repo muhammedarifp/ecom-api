@@ -81,7 +81,7 @@ func AdminAddNewProductController() gin.HandlerFunc {
 		db := *config.GetDb()
 
 		// Check Catogary is is valid or not
-		if res := db.First(&models.Catogary{}, enterData.CatogaryID); res != nil {
+		if res := db.First(&models.Catogory{}, enterData.CatogaryID); res != nil {
 			if errors.Is(res.Error, gorm.ErrRecordNotFound) {
 				ctx.AbortWithStatusJSON(http.StatusBadRequest, models.Response{
 					Status:  false,
@@ -92,7 +92,7 @@ func AdminAddNewProductController() gin.HandlerFunc {
 			}
 		}
 
-		var newProduct = models.Products{
+		var newProduct = models.Product{
 			Name:       enterData.Name,
 			Disc:       enterData.Disc,
 			Price:      enterData.Price,
@@ -178,7 +178,7 @@ func AdminEditProductController() gin.HandlerFunc {
 			return
 		}
 		db := *config.GetDb()
-		var proDeta models.Products
+		var proDeta models.Product
 		if res := db.First(&proDeta, EnterData.ProductID); res.Error != nil {
 			ctx.JSON(400, gin.H{
 				"Error": "Product edit error",
@@ -249,7 +249,7 @@ func AdminDeleteProductController() gin.HandlerFunc {
 		db := *config.GetDb()
 
 		// Product and product images tables structure
-		var Product models.Products
+		var Product models.Product
 
 		if res := db.First(&Product, productid); res.Error != nil {
 			ctx.AbortWithStatusJSON(http.StatusBadRequest, models.Response{
@@ -309,7 +309,7 @@ func AdminGetAllProductController() gin.HandlerFunc {
 		pageSize := 10
 
 		db := *config.GetDb()
-		var Products []models.Products
+		var Products []models.Product
 		var Images []models.ProductImages
 		var result []Response
 
@@ -366,7 +366,7 @@ func AdminGetProductUsingIDController() gin.HandlerFunc {
 		productid := ctx.Param("id")
 
 		db := *config.GetDb()
-		var Product models.Products
+		var Product models.Product
 		var Images []models.ProductImages
 
 		if res := db.First(&Product, productid); res.Error != nil {

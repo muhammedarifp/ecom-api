@@ -92,19 +92,19 @@ func UserLoginController() gin.HandlerFunc {
 // User Signup helper controller
 
 type UserSignupFormData struct {
-	FirstName string `form:"first_name" validate:"required"`
-	LastName  string `form:"last_name" validate:"required"`
-	Email     string `form:"email" validate:"required,email"`
-	Mobile    string `form:"mobile" validate:"required"`
-	Password  string `form:"password" validate:"required,min=6"`
+	FirstName    string `json:"first_name" validate:"required"`
+	LastName     string `json:"last_name" validate:"required"`
+	Email        string `json:"email" validate:"required,email"`
+	Mobile       string `json:"mobile" validate:"required"`
+	Password     string `json:"password" validate:"required,min=6"`
+	RefferelCode string `json:"refferel_code"`
 }
 
 func UserSignupController() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-
 		// Bind form data using struct
 		var userSignupData UserSignupFormData
-		if err := ctx.ShouldBind(&userSignupData); err != nil {
+		if err := ctx.ShouldBindJSON(&userSignupData); err != nil {
 			ctx.JSON(http.StatusBadRequest, models.Response{
 				Status:  false,
 				Message: "Signup failed",
@@ -144,21 +144,21 @@ func UserSignupController() gin.HandlerFunc {
 
 			// Create new user struct
 			pass := helpers.PassToHash(userSignupData.Password)
+			reffrelCode := helpers.CreateReffrerelCode()
 			newUser := models.Users{
-				FirstName:  userSignupData.FirstName,
-				LastName:   userSignupData.LastName,
-				Email:      userSignupData.Email,
-				Mobile:     userSignupData.Mobile,
-				Password:   pass,
-				Isadmin:    false,
-				Isverified: false,
-				Status:     true,
+				FirstName:    userSignupData.FirstName,
+				LastName:     userSignupData.LastName,
+				Email:        userSignupData.Email,
+				Mobile:       userSignupData.Mobile,
+				Password:     pass,
+				Isadmin:      false,
+				Isverified:   false,
+				Status:       true,
+				ReferralCode: reffrelCode,
 			}
 
 			// Upload this struct into db
 			if response := db.Create(&newUser); response.Error != nil {
-
-				// Incase get error on create user just send bad response
 				ctx.JSON(http.StatusInternalServerError, models.Response{
 					Status:  false,
 					Message: "Signup failed",
@@ -167,18 +167,40 @@ func UserSignupController() gin.HandlerFunc {
 				return
 			}
 
-			// Seccess response
-			ctx.JSON(http.StatusOK, gin.H{
+			response := gin.H{
 				"status":  true,
 				"message": "Signup Success",
 				"error":   "Your signup is success !",
 				"user": map[string]any{
-					"user_id":     newUser.ID,
-					"first_name":  newUser.FirstName,
-					"last_name":   newUser.LastName,
-					"is_verified": newUser.Isverified,
+					"user_id":       newUser.ID,
+					"first_name":    newUser.FirstName,
+					"last_name":     newUser.LastName,
+					"is_verified":   newUser.Isverified,
+					"refferel_code": newUser.ReferralCode,
 				},
-			})
+			}
+
+			if userSignupData.RefferelCode != "" {
+				var referedUserData models.Users
+				if err := db.First(&referedUserData, `referral_code = ?`, userSignupData.RefferelCode); err == nil {
+					var referdUserWallet models.Wallets
+					var newUserWallet models.Wallets
+					db.First(&referdUserWallet, `user_id = ?`, referedUserData.ID)
+					db.First(&newUserWallet, `user_id = ?`, newUser.ID)
+					referdUserWallet.UserID = referedUserData.ID
+					referdUserWallet.Balance = referdUserWallet.Balance + 100
+					newUserWallet.Balance = newUserWallet.Balance + 30
+					newUserWallet.UserID = newUser.ID
+					db.Save(&referdUserWallet)
+					db.Save(&newUserWallet)
+					response["Bonus"] = "Refferel code applied"
+					ctx.JSON(200, response)
+					return
+				}
+			}
+
+			response["Bonus"] = "Refferel code empty or invalid"
+			ctx.JSON(200, response)
 
 			// More qury errors
 		} else {

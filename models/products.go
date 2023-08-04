@@ -2,7 +2,7 @@ package models
 
 import "gorm.io/gorm"
 
-type Products struct {
+type Product struct {
 	gorm.Model
 	Name       string  `gorm:"name"`
 	Disc       string  `gorm:"disc"`
@@ -24,7 +24,7 @@ type ProductImages struct {
 
 // Catogary table struct
 
-type Catogary struct {
+type Catogory struct {
 	gorm.Model
 	Name string `gorm:"name"`
 	Disc string `gorm:"disc"` // this is a forein key

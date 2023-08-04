@@ -26,7 +26,7 @@ func CreateNewCoupon() gin.HandlerFunc {
 		}
 
 		// Create new token
-		newToken := models.Coupons{
+		newToken := models.Coupon{
 			Code:              InpData.Code,
 			Discount:          InpData.Discount,
 			ExpiryDate:        InpData.ExpiryDate,
@@ -60,7 +60,7 @@ func DeleteCoupon() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		couponid := ctx.Query("couponid")
 		db := *config.GetDb()
-		if res := db.Delete(&models.Coupons{}, couponid); res.Error != nil {
+		if res := db.Delete(&models.Coupon{}, couponid); res.Error != nil {
 			ctx.AbortWithStatusJSON(400, gin.H{
 				"Error": res.Error.Error(),
 			})

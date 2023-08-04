@@ -28,7 +28,7 @@ type OrdersResponse struct {
 	UserID        string `gorm:"user_id"`
 	PayMethod     string
 	IsSuccess     string
-	OrderProducts []models.OrdersItems
+	OrderProducts []models.OrderItem
 	// Transaction
 }
 
@@ -54,7 +54,7 @@ func GetallOrders() gin.HandlerFunc {
 		}
 
 		for _, val := range orders {
-			var ordersItems []models.OrdersItems
+			var ordersItems []models.OrderItem
 			db.Where("order_id = ?", val.ID).Find(&ordersItems)
 			newResponse := OrdersResponse{
 				Create:        val.Create,

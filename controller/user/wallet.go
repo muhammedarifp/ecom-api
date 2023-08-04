@@ -86,6 +86,8 @@ func useWallet(price float64, ctx *gin.Context) bool {
 	}
 
 	if price <= walletData.Balance {
+		walletData.Balance = walletData.Balance - price
+		db.Save(&walletData)
 		return true
 	}
 	return false

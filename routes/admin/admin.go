@@ -34,4 +34,14 @@ func AdminRoutes(auth *gin.RouterGroup, unauth *gin.RouterGroup) {
 	// Coupon management
 	auth.POST("admin/coupon/add", admincontroller.CreateNewCoupon())
 	auth.DELETE("admin/coupon/delete", admincontroller.DeleteCoupon())
+
+	// Graph view controller
+	auth.GET("admin/sales-graph", admincontroller.SalesGraph())
+
+	// Offer management
+	auth.POST("admin/add-cat-offer", admincontroller.AddCatogaryOffer())
+	auth.DELETE("admin/delete-offer/:offerid", admincontroller.DeleteCatogoryOffer())
+
+	// Report
+	auth.POST("admin/download-sales-repo/:duration", admincontroller.DownloadSalesReport())
 }

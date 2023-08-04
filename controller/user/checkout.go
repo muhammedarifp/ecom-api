@@ -12,7 +12,6 @@ import (
 	"github.com/muhammedarif/Ecomapi/config"
 	"github.com/muhammedarif/Ecomapi/helpers"
 	"github.com/muhammedarif/Ecomapi/models"
-	"gorm.io/gorm"
 )
 
 // var (
@@ -50,6 +49,9 @@ func UserSingleCheckout() gin.HandlerFunc {
 			return
 		}
 
+		method := strings.ToUpper(data.Method)
+		fmt.Println(method)
+
 		// Get user defult address
 		address, stwhether := getDefaultAddress(userID)
 		if !stwhether {
@@ -62,105 +64,17 @@ func UserSingleCheckout() gin.HandlerFunc {
 
 		// If user select cod on single checkot that case perform cod checkout
 		//
-		if data.Method == "COD" {
+		if method == "COD" {
 			// TODO : PERFORM COD CHECKOUT
+			SingleCheckoutWithCod(data.ProductID, userID, data.Coupon, ctx)
 
-			whether, orderData, error := SingleCheckoutWithCod(data.ProductID, userID, data.Coupon)
-			final_price := orderData.TottalAmount
-
-			if data.Coupon != "" {
-				price, err := UseCoupon(data.Coupon, userID, orderData.TottalAmount)
-				if err != nil {
-					final_price = price
-				}
-			}
-
-			// If order not placed that time server throw this exeption message
-			if !whether && error != nil {
-				ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-					"Status": false,
-					"Error":  "Order not completed",
-				})
-				return
-			}
-
-			// If Order is success.
-			ctx.JSON(http.StatusOK, gin.H{
-				"Message": "Order success",
-				"Error":   nil,
-				"Order": map[string]any{
-					"OrderID":     orderData.ID,
-					"Create":      orderData.CreatedAt,
-					"Tottal":      final_price,
-					"Status":      orderData.Status,
-					"PayMethod":   orderData.PayMethod,
-					"Transaction": nil,
-				},
-				"User": map[string]any{
-					"UserID": userID,
-					"Delivery": map[string]any{
-						"Name":     address.Name,
-						"Mobile":   address.Mobile,
-						"Pincode":  address.Pincode,
-						"State":    address.State,
-						"City":     address.City,
-						"Address":  address.Address,
-						"Landmark": address.Landmark,
-					},
-				},
-			})
-
-			// If user select online payment
-			// This condition i integrate razorpay
-			//
-		} else if data.Method == "ONLINE" {
+		} else if method == "ONLINE" {
 			// TODO : PERFORM ONLINE PAY CHECKOUT
-			whether, orderData, transactionData, err := SingleCheckoutWithOnline(fmt.Sprint(data.ProductID), userID, data.Coupon)
-			if err != nil && !whether {
-				ctx.AbortWithStatusJSON(400, gin.H{
-					"Error": err.Error(),
-				})
-				return
-			}
+			SingleCheckoutWithOnline(fmt.Sprint(data.ProductID), userID, data.Coupon, ctx)
 
-			final_price := orderData.TottalAmount
-
-			if data.Coupon != "" {
-				price, err := UseCoupon(data.Coupon, userID, orderData.TottalAmount)
-				if err != nil {
-					final_price = price
-				}
-			}
-
-			ctx.JSON(http.StatusOK, gin.H{
-				"Message": "Order success",
-				"Error":   nil,
-				"Order": map[string]any{
-					"OrderID":     orderData.ID,
-					"Create":      orderData.CreatedAt,
-					"Tottal":      final_price,
-					"Status":      orderData.Status,
-					"PayMethod":   orderData.PayMethod,
-					"Transaction": transactionData,
-				},
-				"User": map[string]any{
-					"UserID": userID,
-					"Delivery": map[string]any{
-						"Name":     address.Name,
-						"Mobile":   address.Mobile,
-						"Pincode":  address.Pincode,
-						"State":    address.State,
-						"City":     address.City,
-						"Address":  address.Address,
-						"Landmark": address.Landmark,
-					},
-				},
-			})
-
-			//
-		} else if data.Method == "WALLET" {
+		} else if method == "WALLET" {
 			db := *config.GetDb()
-			var proData models.Products
+			var proData models.Product
 			if res := db.First(&proData, data.ProductID); res.Error != nil {
 				ctx.AbortWithStatusJSON(400, gin.H{
 					"Error": "Checkout failed",
@@ -169,7 +83,7 @@ func UserSingleCheckout() gin.HandlerFunc {
 			}
 			if !useWallet(float64(proData.Price), ctx) {
 				ctx.AbortWithStatusJSON(400, gin.H{
-					"Error": "Checkout failed",
+					"Error": "Balance is over. topup your wallet",
 				})
 				return
 			}
@@ -177,40 +91,36 @@ func UserSingleCheckout() gin.HandlerFunc {
 			final_price := proData.Price
 			if data.Coupon != "" {
 				price, err := UseCoupon(data.Coupon, userID, float64(final_price))
-				if err != nil {
+				if err == nil {
 					final_price = price
 				}
 			}
 
-			newOrder := models.Orders{
-				UserID:       userID,
+			userIDint, _ := strconv.Atoi(userID)
+			newOrder := models.Order{
+				UserID:       uint(userIDint),
 				TottalAmount: float64(final_price),
 				Status:       "Success",
 				PayMethod:    "WALLET",
 				IsSuccess:    true,
+				Items: []models.OrderItem{
+					{ProductID: proData.ID, Quntity: 1, Price: final_price},
+				},
 			}
-			newOrderItem := models.OrdersItems{
-				OrderID:   newOrder.ID,
-				ProductID: proData.ID,
-				Quntity:   1,
-				Price:     float64(final_price),
-			}
+
 			tx := db.Begin()
 			if res := tx.Create(&newOrder); res.Error != nil {
 				ctx.JSON(400, gin.H{
 					"Error": res.Error.Error(),
+					"Num":   1,
 				})
 				return
 			}
-			if res := tx.Create(&newOrderItem); res.Error != nil {
-				ctx.JSON(400, gin.H{
-					"Error": res.Error.Error(),
-				})
-				return
-			}
+
 			if res := tx.Commit(); res.Error != nil {
 				ctx.JSON(400, gin.H{
 					"Error": res.Error.Error(),
+					"Num":   3,
 				})
 				return
 			}
@@ -225,6 +135,10 @@ func UserSingleCheckout() gin.HandlerFunc {
 					"Status":      newOrder.Status,
 					"PayMethod":   newOrder.PayMethod,
 					"Transaction": newOrder,
+					"Coupon": map[string]any{
+						"Coupon":   data.Coupon,
+						"Discount": proData.Price - final_price,
+					},
 				},
 				"User": map[string]any{
 					"UserID": userID,
@@ -240,8 +154,6 @@ func UserSingleCheckout() gin.HandlerFunc {
 				},
 			})
 		} else {
-			// This case user enter invalid input
-			// So This case return error / invalid message from a user
 			ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 				"Error": "Invalid input",
 			})
@@ -293,12 +205,22 @@ func CartCheckout() gin.HandlerFunc {
 			Select("SUM(price * product_count) as tottal").
 			Find(&total_price)
 
-		dicount_price := 0.0
+		if total_price <= 0 {
+			ctx.JSON(400, gin.H{
+				"Error": "Cart is empty",
+			})
+			ctx.Abort()
+			return
+		}
+
+		final_price := total_price
 		if data.Coupon != "" {
 			price, err := UseCoupon(data.Coupon, userID, float64(total_price))
 			if err == nil {
-				total_price = price
-				dicount_price = price
+				fmt.Println(price)
+				final_price = price
+			} else {
+				fmt.Println(err.Error())
 			}
 		}
 
@@ -306,12 +228,35 @@ func CartCheckout() gin.HandlerFunc {
 			// TODO : Cod Cart checkout section
 
 			// //? First step is create new order
-			newOrder := models.Orders{
-				UserID:       userID,
-				TottalAmount: float64(total_price),
+			userIDint, _ := strconv.Atoi(userID)
+
+			// New OrderItems
+			var items []models.OrderItem
+			for _, value := range CartItems {
+				var _productDeta models.Product
+				if res := db.First(&_productDeta, value.ProductID); res.Error != nil {
+					ctx.AbortWithStatusJSON(400, gin.H{
+						"Error": "Checkout failed",
+					})
+					return
+				}
+				// intUserID, _ := strconv.Atoi(userID)
+				newItem := models.OrderItem{
+					ProductID: value.ProductID,
+					Quntity:   uint(value.ProductCount),
+					Price:     float64(_productDeta.Price) * float64(value.ProductCount),
+				}
+
+				items = append(items, newItem)
+			}
+
+			newOrder := models.Order{
+				UserID:       uint(userIDint),
+				TottalAmount: float64(final_price),
 				Status:       "Success",
 				PayMethod:    "COD",
 				IsSuccess:    true,
+				Items:        items,
 			}
 
 			if res := db.Create(&newOrder); res.Error != nil {
@@ -319,31 +264,6 @@ func CartCheckout() gin.HandlerFunc {
 					"Error": "Checkout not completed",
 				})
 				return
-			}
-
-			// New OrderItems
-			for _, value := range CartItems {
-				var _productDeta models.Products
-				if res := db.First(&_productDeta, value.ProductID); res.Error != nil {
-					ctx.AbortWithStatusJSON(400, gin.H{
-						"Error": "Checkout failed",
-					})
-					return
-				}
-				intUserID, _ := strconv.Atoi(userID)
-				newItem := models.OrdersItems{
-					OrderID:   uint(intUserID),
-					ProductID: value.ProductID,
-					Quntity:   uint(value.ProductCount),
-					Price:     float64(_productDeta.Price) * float64(value.ProductCount),
-				}
-
-				if res := db.Create(&newItem); res.Error != nil {
-					ctx.AbortWithStatusJSON(400, gin.H{
-						"Error": "Checkout failed",
-					})
-					return
-				}
 			}
 
 			if res := db.Delete(&models.UserCart{}, `user_id = ?`, userID); res.Error != nil {
@@ -364,8 +284,10 @@ func CartCheckout() gin.HandlerFunc {
 					"PayMethod":   newOrder.PayMethod,
 					"Transaction": nil,
 					"Coupon": map[string]any{
-						"Code":     data.Coupon,
-						"Discount": total_price - dicount_price,
+						"Code":         data.Coupon,
+						"OrgPrice":     total_price,
+						"DiscoutPrice": final_price,
+						"Discount":     total_price - final_price,
 					},
 				},
 				"User": map[string]any{
@@ -386,7 +308,7 @@ func CartCheckout() gin.HandlerFunc {
 
 			// TODO : Online Cart checkout section
 
-			whether, trData := helpers.CreateOrder(&models.Products{}, float64(total_price))
+			whether, trData := helpers.CreateOrder(&models.Product{}, final_price*100)
 			if !whether {
 				ctx.AbortWithStatusJSON(400, gin.H{
 					"Error": "Checkout failed",
@@ -394,14 +316,34 @@ func CartCheckout() gin.HandlerFunc {
 				return
 			}
 
+			var items []models.OrderItem
+			for _, value := range CartItems {
+				var _productDeta models.Product
+				if res := db.First(&_productDeta, value.ProductID); res.Error != nil {
+					ctx.AbortWithStatusJSON(400, gin.H{
+						"Error": "Checkout failed",
+					})
+					return
+				}
+				newItem := models.OrderItem{
+					ProductID: value.ProductID,
+					Quntity:   uint(value.ProductCount),
+					Price:     float64(_productDeta.Price) * float64(value.ProductCount),
+				}
+
+				items = append(items, newItem)
+			}
+
 			// Creete new order
-			newOrder := models.Orders{
-				UserID:        userID,
-				TottalAmount:  float64(total_price),
+			userIDint, _ := strconv.Atoi(userID)
+			newOrder := models.Order{
+				UserID:        uint(userIDint),
+				TottalAmount:  float64(final_price),
 				Status:        "Pending",
 				PayMethod:     method,
 				TransactionID: trData.ID,
 				IsSuccess:     false,
+				Items:         items,
 			}
 
 			if res := db.Create(&newOrder); res.Error != nil {
@@ -411,28 +353,11 @@ func CartCheckout() gin.HandlerFunc {
 				return
 			}
 
-			for _, value := range CartItems {
-				var _productDeta models.Products
-				if res := db.First(&_productDeta, value.ProductID); res.Error != nil {
-					ctx.AbortWithStatusJSON(400, gin.H{
-						"Error": "Checkout failed",
-					})
-					return
-				}
-				intUserID, _ := strconv.Atoi(userID)
-				newItem := models.OrdersItems{
-					OrderID:   uint(intUserID),
-					ProductID: value.ProductID,
-					Quntity:   uint(value.ProductCount),
-					Price:     float64(_productDeta.Price) * float64(value.ProductCount),
-				}
-
-				if res := db.Create(&newItem); res.Error != nil {
-					ctx.AbortWithStatusJSON(400, gin.H{
-						"Error": "Checkout failed",
-					})
-					return
-				}
+			if res := db.Delete(&models.UserCart{}, `user_id = ?`, userID); res.Error != nil {
+				ctx.JSON(400, gin.H{
+					"Error": "Internal server error",
+				})
+				return
 			}
 
 			ctx.JSON(http.StatusOK, gin.H{
@@ -477,14 +402,19 @@ func CartCheckout() gin.HandlerFunc {
 // Next step is create order on orders table
 // Next step is create order details on order items table
 // Return that order details and items details
-func SingleCheckoutWithCod(productID uint, userID, coupon string) (bool, *models.Orders, error) {
+func SingleCheckoutWithCod(productID uint, userID, coupon string, ctx *gin.Context) bool {
+	fmt.Println("Iam")
 	db := *config.GetDb()
 
-	// Fetch product using product ID
-	//
-	var proData models.Products
+	address, isFetch := getDefaultAddress(userID)
+
+	if !isFetch {
+		ctx.AbortWithStatusJSON(400, gin.H{"Error": "Delivery address not found"})
+	}
+
+	var proData models.Product
 	if res := db.First(&proData, productID); res.Error != nil {
-		return false, &models.Orders{}, errors.New("internal servor error")
+		return false
 	}
 
 	final_price := proData.Price
@@ -495,30 +425,67 @@ func SingleCheckoutWithCod(productID uint, userID, coupon string) (bool, *models
 		}
 	}
 
+	var catogoryOffer models.CatogoryOffer
+	if res := db.Preload("Catogory").Find(&catogoryOffer, proData.CatogaryID); res.Error == nil {
+		percentage := (catogoryOffer.Dicount / final_price) * final_price
+		if percentage > catogoryOffer.MaxDiscount {
+			final_price = final_price - catogoryOffer.MaxDiscount
+		} else {
+			final_price = final_price - percentage
+		}
+	}
+
 	// Create order using user id
-	newOrder := models.Orders{
-		UserID:       userID,
-		TottalAmount: float64(final_price),
-		Status:       "Success",
-		PayMethod:    "COD",
-		IsSuccess:    true,
+	userIDint, _ := strconv.Atoi(userID)
+	newOrder := models.Order{
+		UserID:        uint(userIDint),
+		TottalAmount:  float64(final_price),
+		Status:        "Success",
+		PayMethod:     "COD",
+		IsSuccess:     true,
+		TransactionID: 0,
+		Items: []models.OrderItem{
+			{
+				ProductID: productID,
+				Quntity:   1,
+				Price:     final_price,
+			},
+		},
 	}
 	if res := db.Create(&newOrder); res.Error != nil {
-		return false, &models.Orders{}, errors.New("internal servor error")
+		return false
 	}
 
-	// Create order item
-	newOrderItem := models.OrdersItems{
-		OrderID:   newOrder.ID,
-		ProductID: productID,
-		Quntity:   1,
-		Price:     float64(final_price),
-	}
-	if res := db.Create(&newOrderItem); res.Error != nil {
-		return false, &models.Orders{}, errors.New("internal servor error")
-	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"Message": "Order success",
+		"Error":   nil,
+		"Order": map[string]any{
+			"OrderID":     newOrder.ID,
+			"Create":      newOrder.CreatedAt,
+			"Tottal":      newOrder.TottalAmount,
+			"Status":      newOrder.Status,
+			"PayMethod":   newOrder.PayMethod,
+			"Transaction": nil,
+			"Coupon": map[string]any{
+				"Coupon":   coupon,
+				"Cashback": proData.Price - final_price,
+			},
+		},
+		"User": map[string]any{
+			"UserID": userID,
+			"Delivery": map[string]any{
+				"Name":     address.Name,
+				"Mobile":   address.Mobile,
+				"Pincode":  address.Pincode,
+				"State":    address.State,
+				"City":     address.City,
+				"Address":  address.Address,
+				"Landmark": address.Landmark,
+			},
+		},
+	})
 
-	return false, &newOrder, nil
+	return true
 }
 
 // This function purpus is hep Single checkout section
@@ -528,11 +495,15 @@ func SingleCheckoutWithCod(productID uint, userID, coupon string) (bool, *models
 // After that Create Order using previusly fetched order details
 // Finally create order items
 // Return that all details
-func SingleCheckoutWithOnline(productID, UserID, coupon string) (bool, *models.Orders, *models.Transactions, error) {
+func SingleCheckoutWithOnline(productID, UserID, coupon string, ctx *gin.Context) bool {
 	db := *config.GetDb()
-	var proData models.Products
+	address, isFetch := getDefaultAddress(UserID)
+	if !isFetch {
+		ctx.AbortWithStatusJSON(400, gin.H{"Error": "Delivery address not found"})
+	}
+	var proData models.Product
 	if res := db.First(&proData, productID); res.Error != nil {
-		return false, &models.Orders{}, &models.Transactions{}, errors.New("internal server error or invalid input")
+		return false
 	}
 
 	final_price := proData.Price
@@ -543,41 +514,74 @@ func SingleCheckoutWithOnline(productID, UserID, coupon string) (bool, *models.O
 		}
 	}
 
+	var catogoryOffer models.CatogoryOffer
+	if res := db.Preload("Catogory").Find(&catogoryOffer, proData.CatogaryID); res.Error == nil {
+		percentage := (catogoryOffer.Dicount / final_price) * final_price
+		fmt.Println(percentage)
+		if percentage > catogoryOffer.MaxDiscount {
+			final_price = final_price - catogoryOffer.MaxDiscount
+		} else {
+			final_price = final_price - percentage
+		}
+	}
+
 	// Create razorpay order
-	whether, transactionData := helpers.CreateOrder(&proData, float64(proData.Price))
+	whether, transactionData := helpers.CreateOrder(&proData, final_price*100)
 	if !whether {
-		return false, &models.Orders{}, &models.Transactions{}, errors.New("checkout failed, order not created")
+		return false
 	}
 
 	// Create new order
-	newOrder := models.Orders{
-		UserID:        UserID,
+	userIDint, _ := strconv.Atoi(UserID)
+	newOrder := models.Order{
+		UserID:        uint(userIDint),
 		TottalAmount:  final_price,
 		Status:        "PENDING",
 		PayMethod:     "ONLINE",
 		TransactionID: transactionData.ID,
 		IsSuccess:     false,
+		Items: []models.OrderItem{
+			{ProductID: proData.ID, Quntity: 1, Price: final_price},
+		},
 	}
 
 	if res := db.Create(&newOrder); res.Error != nil {
-		return false, &models.Orders{}, &models.Transactions{}, errors.New("checkout failed")
-	}
-	// New Order Item.
-
-	newOrderItem := models.OrdersItems{
-		OrderID:   newOrder.ID,
-		ProductID: proData.ID,
-		Quntity:   1,
-		Price:     float64(proData.Price),
-	}
-
-	if res := db.Create(&newOrderItem); res.Error != nil {
-		return false, &models.Orders{}, &models.Transactions{}, errors.New("checkout failed")
+		return false
 	}
 
 	// If This all are success. Your order is success
 	// That case server return success message
-	return true, &newOrder, transactionData, nil
+	ctx.JSON(http.StatusOK, gin.H{
+		"Message": "Order success",
+		"Error":   nil,
+		"Order": map[string]any{
+			"OrderID":     newOrder.ID,
+			"Create":      newOrder.CreatedAt,
+			"Tottal":      final_price,
+			"T_Test":      newOrder.TottalAmount,
+			"Status":      newOrder.Status,
+			"PayMethod":   newOrder.PayMethod,
+			"Transaction": transactionData,
+			"Coupon": map[string]any{
+				"Coupon":   coupon,
+				"Cashback": proData.Price - final_price,
+			},
+		},
+		"User": map[string]any{
+			"UserID": UserID,
+			"Delivery": map[string]any{
+				"Name":     address.Name,
+				"Mobile":   address.Mobile,
+				"Pincode":  address.Pincode,
+				"State":    address.State,
+				"City":     address.City,
+				"Address":  address.Address,
+				"Landmark": address.Landmark,
+			},
+		},
+	})
+
+	return true
 }
 
 // This function purpous is use discount and offer coupons
@@ -589,31 +593,15 @@ func SingleCheckoutWithOnline(productID, UserID, coupon string) (bool, *models.O
 // Finally return final price -- !!final price means (org-price - discount)!!
 func UseCoupon(coupon, userID string, price float64) (float64, error) {
 	db := *config.GetDb()
-	var couponData models.Coupons
-	var couponUsage models.CouponUsages
+	var couponData models.Coupon
+	var couponUsage models.CouponUsage
 	if res := db.First(&couponData, `code = ?`, coupon); res.Error != nil {
 		return 0, errors.New("invalid coupon code")
 	}
 
-	if res := db.First(&couponUsage, `user_id = ?`, userID); res.Error != nil {
-		if errors.Is(res.Error, gorm.ErrRecordNotFound) {
-			newUsage := models.CouponUsages{
-				UserID:     userID,
-				CouponID:   couponData.ID,
-				UsageCount: 1,
-			}
+	duration := couponData.CreatedAt.Sub(time.Now())
 
-			if res := db.Create(&newUsage); res.Error != nil {
-				return 0, errors.New("Coupon not applied")
-			}
-		}
-
-		return 0, errors.New("Coupon not applied")
-	}
-
-	duration := time.Now().Sub(couponData.CreatedAt)
-	days := int(duration.Hours() / 24)
-	if days > couponData.ExpiryDate {
+	if duration.Hours() > float64(couponData.ExpiryDate)*24 {
 		return 0, errors.New("coupon expired")
 	}
 
@@ -627,8 +615,10 @@ func UseCoupon(coupon, userID string, price float64) (float64, error) {
 	}
 
 	final_price := price - discount
-	return final_price, nil
 
+	couponUsage.UsageCount++
+	db.Save(&couponUsage)
+	return final_price, nil
 }
 
 // This function usage is fetch default address

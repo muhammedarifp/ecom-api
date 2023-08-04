@@ -2,6 +2,7 @@ package usercontroller
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -25,7 +26,16 @@ type ResponseModel struct {
 func UserGetAllOrders() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		userid := helpers.GetUserIDFromJwt(ctx)
+		pagestr := ctx.Param("page")
+		page, pageerr := strconv.Atoi(pagestr)
+		if pageerr != nil {
+			ctx.AbortWithStatusJSON(400, gin.H{
+				"Error": "Invalid page number",
+			})
+			return
+		}
 		db := *config.GetDb()
+		offset := (page - 1) * 10
 		var userData models.Users
 
 		// Get user data using user id
@@ -35,23 +45,20 @@ func UserGetAllOrders() gin.HandlerFunc {
 				Message: "Orders not fetched",
 				Error:   "Invalid user details - " + res.Error.Error(),
 			})
-
 			return
 		}
 
-		var userOrders []models.Orders
-		if res := db.Find(&userOrders, `user_id = ?`, userid); res.Error != nil {
-			ctx.AbortWithStatusJSON(http.StatusInternalServerError, models.Response{
-				Status:  false,
-				Message: "Orders not fetched",
-				Error:   res.Error.Error(),
-			})
+		var userOrders []models.Order
+		db.Preload("Items").Offset(offset).Find(&userOrders, "user_id = ?", userid).Limit(10)
 
-			return
+		for _, order := range userOrders {
+			for j := range order.Items {
+				db.Preload("Product").First(&order.Items[j].Product, &order.Items[j].ProductID)
+			}
 		}
 
 		// var result []ResponseModel
-		var orderProductDeta []models.OrdersItems
+		var orderProductDeta []models.OrderItem
 
 		// Loop
 		for _, val := range userOrders {
@@ -78,15 +85,17 @@ func UserGetAllOrders() gin.HandlerFunc {
 		}
 
 		ctx.JSON(http.StatusOK, gin.H{
-			"Status":  true,
-			"Message": "Orders fetched success",
-			"Orders":  userOrders,
+			"Page":       page,
+			"Page Limit": 10,
+			"Status":     true,
+			"Message":    "Orders fetched success",
+			"Orders":     userOrders,
 		})
 	}
 }
 
 type CancelInps struct {
-	OrderID uint   `json:"orderid"`
+	OrderID uint   `json:"order_id"`
 	Message string `json:"message"`
 }
 
@@ -96,20 +105,19 @@ func CancelOrder() gin.HandlerFunc {
 		ctx.ShouldBindJSON(&cancelInps)
 		db := *config.GetDb()
 		userID := helpers.GetUserIDFromJwt(ctx)
-		var orderData models.Orders
+		var orderData models.Order
 		// get order details on database
-		if res := db.First(&orderData, cancelInps.OrderID); res.Error != nil {
-			ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-				"Error": res.Error.Error(),
-			})
-			return
-		}
+		db.Preload("Items").First(&orderData, cancelInps.OrderID)
 
-		if !InitRefundToWallet(orderData.ID, userID) {
-			ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-				"Error": "Refund not initialized",
-			})
-			return
+		if orderData.IsSuccess {
+			if !InitRefundToWallet(orderData.ID, userID) {
+				ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+					"Error": "Refund not initialized",
+				})
+				return
+			}
+		} else {
+			ctx.AbortWithStatusJSON(400, gin.H{"Error": "Order Not Success | Cancellation not possible"})
 		}
 
 		// After fetch order details
@@ -119,6 +127,13 @@ func CancelOrder() gin.HandlerFunc {
 				"Error": res.Error.Error(),
 			})
 			return
+		}
+
+		for _, item := range orderData.Items {
+			var productData models.Product
+			db.First(&productData, item.ProductID)
+			productData.Quntity = productData.Quntity + 1
+			db.Save(&productData)
 		}
 
 		ctx.JSON(http.StatusOK, gin.H{
@@ -131,13 +146,10 @@ func CancelOrder() gin.HandlerFunc {
 
 func InitRefundToWallet(orderID uint, userID string) bool {
 	db := *config.GetDb()
-	var OrderData models.Orders
+	var OrderData models.Order
 	var walletData models.Wallets
 	tx := db.Begin()
 	if res := tx.First(&OrderData, orderID); res.Error != nil {
-		return false
-	}
-	if OrderData.PayMethod == "COD" {
 		return false
 	}
 
@@ -145,7 +157,7 @@ func InitRefundToWallet(orderID uint, userID string) bool {
 		return false
 	}
 
-	walletData.Balance = OrderData.TottalAmount
+	walletData.Balance = walletData.Balance + OrderData.TottalAmount
 	if res := tx.Save(&walletData); res.Error != nil {
 		return false
 	}
@@ -159,36 +171,36 @@ func InitRefundToWallet(orderID uint, userID string) bool {
 
 // Return
 
-// func ReturnOrder() gin.HandlerFunc {
-// 	return func(ctx *gin.Context) {
-// 		// Create database instance
-// 		orderid := ctx.Query("orderid")
-// 		db := *config.GetDb()
-// 		var orderData models.Orders
-// 		db.First(&orderData, orderid)
-// 		orderDeff := time.Now().Sub(orderData.CreatedAt).Hours()
-// 		if orderDeff > 168 {
-// 			ctx.AbortWithStatusJSON(http.StatusNotAcceptable, models.Response{
-// 				Status:  false,
-// 				Message: "Return order not allowed",
-// 				Error:   nil,
-// 			})
-// 		} else {
-// 			orderData.Status = "Returned"
-// 			if res := db.Save(orderData); res.Error != nil {
-// 				ctx.AbortWithStatusJSON(http.StatusNotAcceptable, models.Response{
-// 					Status:  false,
-// 					Message: "Return order not allowed",
-// 					Error:   nil,
-// 				})
-// 				return
-// 			}
+func ReturnOrder() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		// Create database instance
+		orderid := ctx.Query("orderid")
+		db := *config.GetDb()
+		var orderData models.Order
+		db.First(&orderData, orderid)
+		orderDeff := time.Now().Sub(orderData.CreatedAt).Hours()
+		if orderDeff > 168 {
+			ctx.AbortWithStatusJSON(http.StatusNotAcceptable, models.Response{
+				Status:  false,
+				Message: "Return order not allowed",
+				Error:   nil,
+			})
+		} else {
+			orderData.Status = "Returned"
+			if res := db.Save(orderData); res.Error != nil {
+				ctx.AbortWithStatusJSON(http.StatusNotAcceptable, models.Response{
+					Status:  false,
+					Message: "Return order not allowed",
+					Error:   nil,
+				})
+				return
+			}
 
-// 			ctx.JSON(200, gin.H{
-// 				"Message": "Your Order Returned Success",
-// 				"Error":   nil,
-// 				"Order":   orderData,
-// 			})
-// 		}
-// 	}
-// }
+			ctx.JSON(200, gin.H{
+				"Message": "Your Order Returned Success",
+				"Error":   nil,
+				"Order":   orderData,
+			})
+		}
+	}
+}

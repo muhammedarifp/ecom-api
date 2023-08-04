@@ -71,8 +71,8 @@ func UserRoutes(auth *gin.RouterGroup, unauth *gin.RouterGroup) {
 	auth.POST("/verify-pay", usercontroller.VerifyOrder())
 	// auth.POST("/online-checkout", usercontroller.UserOnlineCheckout())
 
-	// Manage orders section
-	auth.GET("/orders/getall", usercontroller.UserGetAllOrders())
+	// Orders manage section
+	auth.GET("/orders/getall/:page", usercontroller.UserGetAllOrders())
 	auth.POST("/orders/cancel", usercontroller.CancelOrder())
 	// auth.GET("/orders/return", usercontroller.ReturnOrder())
 
@@ -82,4 +82,12 @@ func UserRoutes(auth *gin.RouterGroup, unauth *gin.RouterGroup) {
 	// Search product
 	auth.GET("/searchbyid/:productid", usercontroller.SearchProductUsingID())
 	auth.GET("/searchbycato/:catogary", usercontroller.SearchProductsUsingCatogary())
+
+	// Manage Invoices
+	auth.GET("/download-invoice/:orderid", usercontroller.DownloadInvoice())
+
+	// Graphs
+
+	// test
+	unauth.GET("/rand", usercontroller.PrintRandNumber())
 }
